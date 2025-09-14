@@ -1,0 +1,53 @@
+name: Build PyInstaller Linux ARM Binary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-arm:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [ "arm64", "armv7" ]   # build for aarch64 and armv7
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU (for multiarch docker)
+      uses: docker/setup-qemu-action@v2
+
+    - name: Build inside matching python docker (arm)
+      run: |
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          DOCKER_IMG=arm64v8/python:3.11-slim
+          OUTPUT_NAME=gamepach_linux_aarch64
+        else
+          DOCKER_IMG=arm32v7/python:3.11-slim
+          OUTPUT_NAME=gamepach_linux_armv7
+        fi
+
+        docker run --rm -v "$PWD":/src -w /src --env OUTPUT_NAME="$OUTPUT_NAME" $DOCKER_IMG /bin/bash -lc "
+          apt-get update -qq && apt-get install -y build-essential zip ca-certificates >/dev/null 2>&1 || true
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install pyinstaller colorama
+          pyinstaller --onefile --name \"\$OUTPUT_NAME\" gamepach.py
+          mkdir -p /src/dist_artifacts
+          if [ -f dist/\"\$OUTPUT_NAME\" ]; then
+            cp dist/\"\$OUTPUT_NAME\" /src/dist_artifacts/
+            chmod +x /src/dist_artifacts/\"\$OUTPUT_NAME\"
+            cd /src/dist_artifacts && zip -r /src/\"\$OUTPUT_NAME\".zip ./"\$OUTPUT_NAME"
+          else
+            echo 'BUILD FAILED: output not found' && exit 2
+          fi
+        "
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.arch }}
+        path: |
+          ./gamepach_linux_aarch64.zip
+          ./gamepach_linux_armv7.zip
+        if-no-files-found: ignore￼Enter
